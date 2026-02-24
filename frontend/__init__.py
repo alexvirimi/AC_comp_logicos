@@ -1,0 +1,1 @@
+self.sidebar = SideBar(on_level_change_callback=self.generar_estructura_niveles)
