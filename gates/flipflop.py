@@ -10,6 +10,7 @@ class FlipFlop(Compuerta):
     S=1, R=0 -> Set (salida Q = 1)
     S=0, R=1 -> Reset (salida Q = 0)
     S=1, R=1 -> Indeterminado (no permitido)
+    Mario Julio doesn't understand wtf is a flip flop
     """
     
     def __init__(self):

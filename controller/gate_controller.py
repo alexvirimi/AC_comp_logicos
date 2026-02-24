@@ -11,14 +11,10 @@ class CompuertaController:
     
     def operar(self, compuerta: Compuerta, A, B=None):
         """
-        Ejecuta la operación de una compuerta.
-        
         Args:
             compuerta: Instancia de Compuerta a utilizar
             A: Primera entrada
             B: Segunda entrada (opcional)
-            
-        Returns:
-            Resultado de la operación de la compuerta
+
         """
         return compuerta.operar(A, B)
