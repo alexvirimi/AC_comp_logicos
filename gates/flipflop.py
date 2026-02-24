@@ -9,8 +9,7 @@ class FlipFlop(Compuerta):
     S=0, R=0 -> Mantiene estado anterior
     S=1, R=0 -> Set (salida Q = 1)
     S=0, R=1 -> Reset (salida Q = 0)
-    S=1, R=1 -> Indeterminado (no permitido)
-    Mario Julio doesn't understand wtf is a flip flop
+    S=1, R=1 -> Aquí lo tratamos como Set (Q = 1) por especificación
     """
     
     def __init__(self):
@@ -32,6 +31,8 @@ class FlipFlop(Compuerta):
         elif A == 0 and B == 1:
             self.value = 0  # Reset
         # Si A==0 y B==0, mantiene el estado anterior
-        # Si A==1 y B==1, se considera indeterminado (aquí mantiene estado)
+        # Si A==1 y B==1, lo tratamos como Set por la corrección requerida
+        if A == 1 and B == 1:
+            self.value = 1
         
         return self.value, int(not self.value)

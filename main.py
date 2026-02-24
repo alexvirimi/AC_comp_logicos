@@ -1,8 +1,28 @@
-#Le dije a gepete que me hiciera un main de prueba pa ver si aja, la implementacion de los arboles salio bien
+"""
+Módulo de consola interactiva para la construcción y evaluación de un circuito lógico
+representado como un árbol binario perfecto. Permite al usuario seleccionar el número
+de niveles, definir el tipo de compuerta por nivel, asignar valores a las entradas,
+agregar opcionalmente un Flip-Flop SR en cualquier nodo (entrada o salida),
+evaluar el circuito y visualizar su estructura y resultados.
+
+Este módulo puede integrarse fácilmente a una interfaz gráfica reemplazando las
+entradas por consola por componentes visuales como formularios, listas desplegables,
+botones y paneles de visualización, manteniendo intacta la lógica de construcción
+y evaluación del circuito.
+"""
 
 from gates import AND, OR, NAND, NOR, XOR, FlipFlop
 from tree.node import Nodo
 from tree.builder import TreeBuilder
+
+
+GATE_MAP = {
+    'AND': AND,
+    'OR': OR,
+    'NAND': NAND,
+    'NOR': NOR,
+    'XOR': XOR,
+}
 
 
 def print_separator(title: str = ""):
@@ -14,202 +34,200 @@ def print_separator(title: str = ""):
         print("-" * 60)
 
 
-def print_tree_structure(node: Nodo, level: int = 0, prefix: str = ""):
+def color_bit(b: int) -> str:
+    # green for 1, red for 0
+    if b == 1:
+        return f"\x1b[32m1\x1b[0m"
+    return f"\x1b[31m0\x1b[0m"
+
+
+def print_tree(node: Nodo, prefix: str = ""):
     if node is None:
         return
 
     if node.is_leaf():
-        symbol = f"Hoja [valor={node.value}]"
+        val = node.value if node.result is None else node.result
+        print(f"{prefix} Hoja (val={color_bit(int(val))})")
     else:
         gate_name = node.gate.__class__.__name__
-        result = node.result if node.result is not None else "?"
-        symbol = f"{gate_name} [resultado={result}]"
-
-    print(f"{prefix}{symbol}")
-
-    if node.left is not None or node.right is not None:
-        if node.left is not None:
-            print_tree_structure(node.left, level + 1, prefix + "  ├─ ")
-        if node.right is not None:
-            print_tree_structure(node.right, level + 1, prefix + "  └─ ")
-
-
-def assign_values_to_leaves(node: Nodo, values: list, index: list = None):
-    """
-    Args:
-        node: Nodo actual
-        values: Lista de valores a asignar
-        index: Índice actual (usa lista para pasar por referencia)
-    """
-    if index is None:
-        index = [0]
-
-    if node is None:
-        return
+        res = node.result if node.result is not None else "?"
+        res_str = color_bit(int(res)) if isinstance(res, int) else res
+        print(f"{prefix}🔹 {gate_name} -> {res_str}")
 
     if node.left is not None:
-        assign_values_to_leaves(node.left, values, index)
-
-    if node.is_leaf():
-        if index[0] < len(values):
-            node.value = values[index[0]]
-            index[0] += 1
-
+        print_tree(node.left, prefix + "  ├─ ")
     if node.right is not None:
-        assign_values_to_leaves(node.right, values, index)
+        print_tree(node.right, prefix + "  └─ ")
 
 
-def print_leaf_values(node: Nodo, values: list = None, index: list = None):
+def get_node_by_path(root: Nodo, path: str) -> Nodo:
+    node = root
+    for ch in path:
+        if node is None:
+            return None
+        if ch.upper() == 'L':
+            node = node.left
+        elif ch.upper() == 'R':
+            node = node.right
+        else:
+            return None
+    return node
+
+
+def evaluate_with_flipflop(node: Nodo, ff_map: dict, path: str = ""):
+    """Recursively evaluate node honoring flip-flop placements.
+
+    ff_map: dict mapping path -> (FlipFlop instance, position 'input'|'output')
     """
-    Args:
-        node: Nodo actual
-        values: Lista acumuladora de valores
-        index: Índice actual
-    """
-    if values is None:
-        values = []
-    if index is None:
-        index = [0]
-
-    if node is None:
-        return values
-
-    if node.left is not None:
-        print_leaf_values(node.left, values, index)
-
     if node.is_leaf():
-        values.append(node.value)
-        print(f"  Entrada {index[0]}: {node.value}")
-        index[0] += 1
+        val = int(node.value)
+        # flipflop attached to leaf input
+        if path in ff_map and ff_map[path][1] == 'input':
+            ff = ff_map[path][0]
+            out = ff.operar(val, 0)
+            val = out[0] if isinstance(out, tuple) else int(out)
+        node.result = val
+        return val
 
-    if node.right is not None:
-        print_leaf_values(node.right, values, index)
+    left_val = evaluate_with_flipflop(node.left, ff_map, path + 'L')
+    right_val = evaluate_with_flipflop(node.right, ff_map, path + 'R')
 
-    return values
+    # flipflop on inputs to this gate
+    if path in ff_map and ff_map[path][1] == 'input':
+        ff = ff_map[path][0]
+        out = ff.operar(left_val, right_val)
+        if isinstance(out, tuple):
+            left_val = right_val = out[0]
+        else:
+            left_val = right_val = int(out)
 
+    gate_out = node.gate.operar(int(left_val), int(right_val))
 
-def test_simple_tree():
-    print_separator("PRUEBA 1: Árbol de 2 Niveles (AND en nivel 1, OR en nivel 2)")
+    # flipflop on output of this gate
+    if path in ff_map and ff_map[path][1] == 'output':
+        ff = ff_map[path][0]
+        out = ff.operar(int(gate_out), 0)
+        gate_out = out[0] if isinstance(out, tuple) else int(out)
 
-    builder = TreeBuilder(num_levels=2, gate_types=[AND, OR])
+    node.result = int(gate_out) if not isinstance(gate_out, tuple) else int(gate_out[0])
+    return node.result
+ 
+
+def interactive_console():
+    print_separator("CIRCUITO LÓGICO - MODO CONSOLA")
+
+    # 1) Pedir niveles
+    while True:
+        try:
+            num_levels = int(input("Ingrese cantidad de niveles de compuertas (1-6): ").strip())
+            if 1 <= num_levels <= 6:
+                break
+        except Exception:
+            pass
+        print("Valor inválido. Intente nuevamente.")
+
+    # 2) Seleccionar tipo de compuerta por nivel
+    gate_types = []
+    names = list(GATE_MAP.keys())
+    for i in range(1, num_levels + 1):
+        while True:
+            print(f"Nivel {i} - opciones: {', '.join(names)}")
+            choice = input(f"Elija compuerta para nivel {i} (por defecto AND): ").strip().upper() or 'AND'
+            if choice in GATE_MAP:
+                gate_types.append(GATE_MAP[choice])
+                break
+            print("Opción inválida. Intente nuevamente.")
+
+    # Construir árbol
+    builder = TreeBuilder(num_levels=num_levels, gate_types=gate_types)
     root = builder.build()
-
     stats = builder.get_statistics()
+    print_separator("Árbol construido")
     print("Estadísticas:")
-    for key, value in stats.items():
-        print(f"  {key}: {value}")
+    for k, v in stats.items():
+        print(f"  {k}: {v}")
 
-    print("\nAsignando valores a las entradas...")
-    values = [0, 1, 0, 1]
-    assign_values_to_leaves(root, values)
+    # 3) Asignar valores de hojas
+    total_leaves = stats['total_leaves']
+    print(f"\nHay {total_leaves} entradas (hojas). Ingrese valores separados por espacio (0/1).")
+    vals = None
+    while True:
+        s = input(f"Ingrese {total_leaves} valores (o 'r' aleatorio, vacío = todos 0): ").strip()
+        if s.lower() == 'r':
+            import random
+            vals = [random.randint(0,1) for _ in range(total_leaves)]
+            break
+        if s == '':
+            vals = [0]*total_leaves
+            break
+        parts = s.split()
+        if len(parts) == total_leaves and all(p in ('0','1') for p in parts):
+            vals = [int(p) for p in parts]
+            break
+        print("Entrada inválida. Asegúrese de poner exactamente los valores requeridos.")
 
-    print("\nValores asignados:")
-    print_leaf_values(root)
+    # assign via builder.get_leaves()
+    leaves = builder.get_leaves()
+    for i, v in enumerate(vals):
+        leaves[i].value = int(v)
 
-    print("\nEvaluando circuito...")
-    result = root.evaluate()
-    print(f"  Resultado final: {result}")
-
-    print("\nEstructura del árbol después de evaluación:")
-    print_tree_structure(root)
-
-
-def test_larger_tree():
-    print_separator("PRUEBA 2: Árbol de 3 Niveles (AND → OR → NAND)")
-
-    builder = TreeBuilder(num_levels=3, gate_types=[AND, OR, NAND])
-    root = builder.build()
-
-    stats = builder.get_statistics()
-    print("Estadísticas:")
-    for key, value in stats.items():
-        print(f"  {key}: {value}")
-
-    print("\nAsignando valores a las entradas (todos 1s)...")
-    values = [1, 1, 1, 1, 1, 1, 1, 1]
-    assign_values_to_leaves(root, values)
-
-    print("\nValores asignados:")
-    print_leaf_values(root)
-
-    print("\nEvaluando circuito...")
-    result = root.evaluate()
-    print(f"  Resultado final: {result}")
-
-    print("\nEstructura del árbol después de evaluación:")
-    print_tree_structure(root)
-
-
-def test_verify_formula():
-    print_separator("PRUEBA 3: Verificación de Fórmula")
-
-    for num_levels in range(1, 4):
-        builder = TreeBuilder(
-            num_levels=num_levels,
-            gate_types=[AND] * num_levels
-        )
-        root = builder.build()
-        stats = builder.get_statistics()
-
-        gates_per_level = [
-            stats["gates_per_level"].get(f"Nivel {i}", 0)
-            for i in range(1, num_levels + 1)
-        ]
-
-        is_valid = TreeBuilder.verify_formula(num_levels, gates_per_level)
-
-        print(f"\nNiveles: {num_levels}")
-        print(f"  Compuertas por nivel: {gates_per_level}")
-        print("  Fórmula válida" if is_valid else "  Fórmula inválida")
-        print(f"  Total de entradas: {stats['total_leaves']}")
-
-
-def test_max_levels():
-    print_separator("PRUEBA 4: Árbol Máximo (6 Niveles)")
-
-    builder = TreeBuilder(
-        num_levels=6,
-        gate_types=[AND, OR, NAND, NOR, XOR, AND]
-    )
-    root = builder.build()
-
-    stats = builder.get_statistics()
-    print("Estadísticas:")
-    print(f"  Niveles: {stats['num_levels']}")
-    print(f"  Total de compuertas: {stats['total_gates']}")
-    print(f"  Total de entradas: {stats['total_leaves']}")
-
-    import random
-    values = [random.randint(0, 1) for _ in range(stats['total_leaves'])]
-    assign_values_to_leaves(root, values)
-
-    print("\nValores asignados (primeros 10):")
-    first_values = values[:10]
-    for i, v in enumerate(first_values):
+    print_separator("Entradas asignadas")
+    for i, v in enumerate(vals):
         print(f"  Entrada {i}: {v}")
-    if len(values) > 10:
-        print(f"  ... y {len(values) - 10} más")
 
-    print("\nEvaluando circuito...")
-    result = root.evaluate()
-    print(f"  Resultado final: {result}")
+    # 4) Opcional: agregar un único FlipFlop SR
+    ff_map = {}
+    add_ff = input("Desea agregar un FlipFlop SR en alguna entrada/salida? (s/N): ").strip().lower() == 's'
+    if add_ff:
+        print("Indique la posición del nodo donde colocar el FlipFlop.")
+        print("Use ruta desde la raíz con L/R (ej: ''=raiz, L=izq, RL=der-izq). Ejemplo: 'L' sin comillas.")
+        path = input("Ruta del nodo: ").strip().upper()
+        pos = ''
+        while pos not in ('INPUT','OUTPUT'):
+            pos = input("Posición del FlipFlop ('input' o 'output'): ").strip().upper()
+        # validar nodo existe
+        target = get_node_by_path(root, path) if path != '' else root
+        if target is None:
+            print("Ruta inválida. No se agregó FlipFlop.")
+        else:
+            ff = FlipFlop()
+            ff_map[path] = (ff, 'input' if pos=='INPUT' else 'output')
+            print(f"FlipFlop agregado en ruta '{path}' como {pos}.")
+
+    # Evaluar y mostrar resultados
+    evaluate_with_flipflop(root, ff_map, path='')
+    print_separator("Resultado del circuito")
+    print_tree(root)
+    print(f"\nResultado final (raíz): {root.result}")
+
+    # Interactive loop: allow changing leaves and re-eval
+    while True:
+        cmd = input("\nComandos: [c]ambiar entradas, [r]e-evaluar, [p]rint árbol, [q] salir: ").strip().lower()
+        if cmd == 'q':
+            break
+        if cmd == 'p':
+            print_tree(root)
+            continue
+        if cmd == 'c':
+            s = input(f"Ingrese {total_leaves} valores separados (0/1): ").strip()
+            parts = s.split()
+            if len(parts) != total_leaves or not all(p in ('0','1') for p in parts):
+                print("Entrada inválida")
+                continue
+            for i, p in enumerate(parts):
+                leaves[i].value = int(p)
+            print("Entradas actualizadas")
+            continue
+        if cmd == 'r':
+            evaluate_with_flipflop(root, ff_map, path='')
+            print_tree(root)
+            print(f"Resultado final (raíz): {root.result}")
+            continue
+        print("Comando no reconocido")
 
 
-if __name__ == "__main__":
-    print("\n" + "="*60)
-    print("  PRUEBAS ESTRUCTURALES - CIRCUITO LÓGICO")
-    print("="*60)
-
+if __name__ == '__main__':
     try:
-        test_simple_tree()
-        test_larger_tree()
-        test_verify_formula()
-        test_max_levels()
-
-        print_separator("TODAS LAS PRUEBAS COMPLETADAS EXITOSAMENTE")
-
-    except Exception as e:
-        print_separator("ERROR DURANTE LAS PRUEBAS")
-        print(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
+        interactive_console()
+    except KeyboardInterrupt:
+        print("\nSaliendo...")

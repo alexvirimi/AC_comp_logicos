@@ -40,7 +40,8 @@ class TreeBuilder:
     def build(self) -> Nodo:
         total_leaves = 2 ** self.num_levels
         leaves = [Nodo(value=0) for _ in range(total_leaves)]
-        self._nodes_by_level[self.num_levels] = leaves
+        # Guardar hojas en el nivel num_levels + 1 (las compuertas ocupan niveles 1..num_levels)
+        self._nodes_by_level[self.num_levels + 1] = leaves
 
         current_level_nodes = leaves
 
@@ -86,6 +87,18 @@ class TreeBuilder:
             "total_leaves": 2 ** self.num_levels,
             "gates_per_level": gates_per_level
         }
+
+    def get_leaves(self) -> List[Nodo]:
+        """
+        Retorna la lista de nodos hoja del árbol construido.
+        Raises:
+            ValueError: Si build() no ha sido llamado aún
+        Returns:
+            Lista de nodos hoja
+        """
+        if not self._nodes_by_level or (self.num_levels + 1) not in self._nodes_by_level:
+            raise ValueError("Primero debe llamar a build()")
+        return self._nodes_by_level[self.num_levels + 1]
 
     @staticmethod
     def verify_formula(num_levels: int, gates_per_level: List[int]) -> bool:
