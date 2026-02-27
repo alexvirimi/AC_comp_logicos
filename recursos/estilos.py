@@ -2,7 +2,7 @@
 Módulo de estilos - Define temas y colores para la interfaz
 """
 
-# Colores del tema oscuro (como V0)
+# Colores del tema oscuro
 COLORES_NEON = [
     "#f97316",  # orange
     "#f59e0b",  # amber
@@ -129,7 +129,7 @@ QScrollBar::handle:horizontal:hover {
 }
 """
 
-# Paleta de compuertas con nombres humanizados
+# Paleta de compuertas
 PALETA_COMPUERTAS = {
     "AND": {"nombre": "AND", "simbolo": "∧", "color": COLORES_NEON[0]},
     "OR": {"nombre": "OR", "simbolo": "∨", "color": COLORES_NEON[1]},

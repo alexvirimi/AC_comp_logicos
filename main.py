@@ -15,8 +15,7 @@ def main():
     
     # Mostrar diálogo inicial
     dialog = LevelSelectorDialog()
-    
-    # QDialog.exec() returns a QDialog.DialogCode
+
     if dialog.exec() == QDialog.DialogCode.Accepted:
         # Si el usuario selecciona niveles, mostrar ventana principal
         window = CircuitWindow(dialog.selected_levels)
