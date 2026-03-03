@@ -1,11 +1,16 @@
-"""Ventana principal de la aplicación de circuitos con compuertas lógicas."""
-
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QScrollArea, QFrame
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIcon
+import os
+
+try:
+    from PyQt6.QtSvgWidgets import QSvgWidget
+except ImportError:
+    QSvgWidget = None
+
 from logica.circuito import Circuit
 from logica.compuertas import get_gates_per_level
 from recursos.constantes import COLORS, LEVEL_COLORS
@@ -32,9 +37,9 @@ class InputsColumn(QFrame):
     
     def _init_ui(self):
         """Inicializa la interfaz."""
-        layout = QVBoxLayout()
-        layout.setSpacing(4)
-        layout.setContentsMargins(10, 10, 10, 10)
+        main_layout = QVBoxLayout()
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(10, 10, 10, 10)
         
         title = QLabel("Entradas")
         title_font = QFont()
@@ -42,39 +47,75 @@ class InputsColumn(QFrame):
         title_font.setPointSize(10)
         title.setFont(title_font)
         title.setStyleSheet(f"color: {COLORS['text_primary']};")
-        layout.addWidget(title)
+        main_layout.addWidget(title)
         
-        layout.addSpacing(8)
+        # Add spacing to align with LevelColumn header/info area
+        # (accounts for level label + header layout + info label in LevelColumn)
+        main_layout.addSpacing(60)
         
-        # Crear botones para cada entrada (tamaño reducido, solo muestran 0/1)
-        for i in range(len(self.circuit.inputs)):
-            val = self.circuit.inputs[i]
-            btn = QPushButton(str(val))
-            btn.setFixedSize(22, 22)
-            btn.setCheckable(True)
-            btn.setChecked(bool(val))
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {COLORS['red']};
-                    color: white;
-                    border: 1px solid {COLORS['red']};
-                    border-radius: 11px;
-                    font-size: 10px;
-                }}
-                QPushButton:checked {{
-                    background-color: {COLORS['green']};
-                    border: 1px solid {COLORS['green']};
-                }}
-                QPushButton:hover {{
-                    opacity: 0.8;
+        # Get number of gates in level 0 to align inputs
+        gates_level_0 = get_gates_per_level(0, self.circuit.levels)
+        num_inputs_per_gate = 2  # cada compuerta tiene 2 entradas
+        total_inputs = len(self.circuit.inputs)
+        
+        # Create a grid of input pairs, one row per gate
+        gates_layout = QVBoxLayout()
+        gates_layout.setSpacing(6)  # match spacing of gate_frames
+        
+        for gate_idx in range(gates_level_0):
+            # Create a VERTICAL layout for the pair of inputs for this gate
+            pair_layout = QVBoxLayout()
+            pair_layout.setSpacing(0)  # no spacing between buttons
+            pair_layout.setContentsMargins(0, 0, 0, 0)  # no margins
+            
+            # Two inputs per gate, stacked vertically
+            for input_offset in range(num_inputs_per_gate):
+                input_idx = gate_idx * num_inputs_per_gate + input_offset
+                if input_idx < total_inputs:
+                    val = self.circuit.inputs[input_idx]
+                    btn = QPushButton(str(val))
+                    btn.setFixedSize(30, 30)
+                    btn.setCheckable(True)
+                    btn.setChecked(bool(val))
+                    btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background-color: {COLORS['red']};
+                            color: white;
+                            border: 1px solid {COLORS['red']};
+                            border-radius: 15px;
+                            font-size: 10px;
+                            font-weight: bold;
+                        }}
+                        QPushButton:checked {{
+                            background-color: {COLORS['green']};
+                            border: 1px solid {COLORS['green']};
+                        }}
+                        QPushButton:hover {{
+                            opacity: 0.8;
+                        }}
+                    """)
+                    btn.clicked.connect(lambda checked, idx=input_idx: self._toggle_input(idx, checked))
+                    pair_layout.addWidget(btn)
+                    self.input_buttons.append(btn)
+            
+            # Center the pair of buttons vertically in the frame
+            pair_layout.insertStretch(0, 1)
+            pair_layout.addStretch(1)
+            
+            # Create a container frame to match gate height (80px)
+            pair_frame = QFrame()
+            pair_frame.setLayout(pair_layout)
+            pair_frame.setFixedHeight(80)
+            pair_frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: transparent;
                 }}
             """)
-            btn.clicked.connect(lambda checked, idx=i: self._toggle_input(idx, checked))
-            layout.addWidget(btn)
-            self.input_buttons.append(btn)
+            gates_layout.addWidget(pair_frame)
         
-        layout.addStretch()
-        self.setLayout(layout)
+        main_layout.addLayout(gates_layout)
+        main_layout.addStretch()
+        self.setLayout(main_layout)
     
     def _toggle_input(self, index: int, checked: bool):
         """Alterna el valor de una entrada."""
@@ -118,6 +159,8 @@ class LevelColumn(QFrame):
             }}
         """)
         self._init_ui()
+        # after building UI, load the correct gate icons
+        self._update_icons()
     
     def _init_ui(self):
         """Inicializa la interfaz."""
@@ -137,7 +180,13 @@ class LevelColumn(QFrame):
         
         # Selector de compuerta
         combo = QComboBox()
-        combo.addItems(["AND", "OR", "NAND", "NOR", "XOR", "XNOR"])
+        gate_list = ["AND", "OR", "NAND", "NOR", "XOR", "XNOR"]
+        combo.addItems(gate_list)
+        # add icons to items
+        for idx, g in enumerate(gate_list):
+            path = self._get_gate_icon_path(g)
+            if os.path.exists(path):
+                combo.setItemIcon(idx, QIcon(path))
         combo.setCurrentText(self.circuit.gate_types[self.level])
         combo.setStyleSheet(f"""
             QComboBox {{
@@ -173,6 +222,7 @@ class LevelColumn(QFrame):
         gates_layout.setSpacing(6)
         self.gate_frames = []
         self.output_labels = []
+        self.icon_widgets = []  # svg widget or label
         
         for i in range(self.gates_per_level):
             gate_frame = QFrame()
@@ -184,11 +234,22 @@ class LevelColumn(QFrame):
                     padding: 6px;
                 }}
             """)
-            gate_frame.setFixedSize(60, 60)
+            # make frame taller to fit both icon and output
+            gate_frame.setFixedSize(60, 80)
             
             gate_layout = QVBoxLayout()
             gate_layout.setContentsMargins(0, 0, 0, 0)
             gate_layout.setSpacing(0)
+            
+            # icon for gate type
+            if QSvgWidget is not None:
+                icon_widget = QSvgWidget()
+                icon_widget.setFixedSize(36, 36)
+            else:
+                icon_widget = QLabel()
+                icon_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            gate_layout.addWidget(icon_widget)
+            self.icon_widgets.append(icon_widget)
             
             output_label = QLabel("0")
             output_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -210,12 +271,14 @@ class LevelColumn(QFrame):
         """Cuando cambia el tipo de compuerta."""
         self.circuit.set_gate_type(self.level, gate_type)
         self.gate_changed.emit(self.level, gate_type)
+        self._update_icons()
     
     def update_display(self, results: list):
         """Actualiza los resultados mostrados."""
         self.results = results
         
         # Actualizar valores y colores de los gates
+        # icon updates not required here since gate type doesn't change
         for i, output_label in enumerate(self.output_labels):
             if i < len(results):
                 val = results[i]
@@ -223,9 +286,36 @@ class LevelColumn(QFrame):
                 output_label.setText(str(val))
                 output_label.setStyleSheet(f"color: {color}; font-size: 14px;")
 
+    def _get_gate_icon_path(self, gate_type: str) -> str:
+        """Return absolute path to SVG icon for given gate type."""
+        name = gate_type.lower()
+        base = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'assets'))
+        return os.path.join(base, f"{name}.svg")
+
+    def _update_icons(self):
+        """Loads and updates each icon widget based on current gate type."""
+        icon_path = self._get_gate_icon_path(self.circuit.gate_types[self.level])
+        exists = os.path.exists(icon_path)
+        for widget in self.icon_widgets:
+            if exists:
+                if QSvgWidget is not None and isinstance(widget, QSvgWidget):
+                    widget.load(icon_path)
+                else:
+                    icon = QIcon(icon_path)
+                    pix = icon.pixmap(36, 36)
+                    widget.setPixmap(pix)
+            else:
+                # clear
+                if QSvgWidget is not None and isinstance(widget, QSvgWidget):
+                    widget.load(b"")
+                else:
+                    widget.clear()
+
 
 class CircuitWindow(QMainWindow):
     """Ventana principal del circuito."""
+    
+    rebuild_requested = pyqtSignal()  # señal para solicitar reconstrucción
     
     def __init__(self, levels: int):
         super().__init__()
@@ -302,6 +392,25 @@ class CircuitWindow(QMainWindow):
         """)
         reset_btn.clicked.connect(self._on_reset)
         header_layout.addWidget(reset_btn)
+        
+        # Botón reconstruir
+        rebuild_btn = QPushButton("Reconstruir")
+        rebuild_btn.setMinimumHeight(35)
+        rebuild_btn.setMinimumWidth(120)
+        rebuild_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #7c3aed;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: #6d28d9;
+            }}
+        """)
+        rebuild_btn.clicked.connect(self._on_rebuild)
+        header_layout.addWidget(rebuild_btn)
         
         header.setLayout(header_layout)
         main_layout.addWidget(header)
@@ -407,3 +516,8 @@ class CircuitWindow(QMainWindow):
                 pass
         self.inputs_column.update_display()
         self._update_display()
+
+    def _on_rebuild(self):
+        """Solicita volver al diálogo inicial para reconstruir el circuito."""
+        self.rebuild_requested.emit()
+        self.close()
