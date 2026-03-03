@@ -171,7 +171,9 @@ class LevelColumn(QFrame):
         # Header con selector de compuerta
         header = QHBoxLayout()
         
-        title = QLabel(f"L{self.level}")
+        # Mostrar numeración invertida: L0 debe corresponder a la salida (último nivel)
+        display_level = (self.circuit.levels - 1) - self.level
+        title = QLabel(f"L{display_level}")
         title_font = QFont()
         title_font.setBold(True)
         title.setFont(title_font)
@@ -217,50 +219,44 @@ class LevelColumn(QFrame):
         info.setStyleSheet(f"color: {self.color_dict['text']}; font-size: 9px;")
         layout.addWidget(info)
         
-        # Gates del nivel (stacked verticalmente)
+        # Gates del nivel con espaciamiento dinámico
         gates_layout = QVBoxLayout()
-        gates_layout.setSpacing(6)
+        gates_layout.setSpacing(0)
         self.gate_frames = []
         self.output_labels = []
         self.icon_widgets = []  # svg widget or label
         
-        for i in range(self.gates_per_level):
-            gate_frame = QFrame()
-            gate_frame.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {COLORS['bg_primary']};
-                    border: 1px solid {self.color_dict['border']};
-                    border-radius: 6px;
-                    padding: 6px;
-                }}
-            """)
-            # make frame taller to fit both icon and output
-            gate_frame.setFixedSize(60, 80)
-            
-            gate_layout = QVBoxLayout()
-            gate_layout.setContentsMargins(0, 0, 0, 0)
-            gate_layout.setSpacing(0)
-            
-            # icon for gate type
-            if QSvgWidget is not None:
-                icon_widget = QSvgWidget()
-                icon_widget.setFixedSize(36, 36)
+        # parámetros de posicionamiento
+        gate_h = 80
+        inter = 6
+        def compute_positions(level: int):
+            counts = [get_gates_per_level(l, self.circuit.levels) for l in range(self.circuit.levels)]
+            pos = [i * (gate_h + inter) for i in range(counts[0])]
+            for l in range(1, level + 1):
+                new_pos = []
+                for i in range(counts[l]):
+                    li = 2 * i
+                    left = pos[li]
+                    right = pos[li + 1] if li + 1 < len(pos) else left
+                    new_pos.append((left + right) / 2)
+                pos = new_pos
+            return pos
+        y_positions = compute_positions(self.level)
+        # convert to spacings
+        spacings = []
+        for idx, y in enumerate(y_positions):
+            if idx == 0:
+                spacings.append(max(0, y))
             else:
-                icon_widget = QLabel()
-                icon_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            gate_layout.addWidget(icon_widget)
-            self.icon_widgets.append(icon_widget)
-            
-            output_label = QLabel("0")
-            output_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            output_label.setStyleSheet(f"color: {COLORS['red']}; font-size: 14px;")
-            output_label.setObjectName(f"output_{i}")
-            gate_layout.addWidget(output_label)
-            
-            gate_frame.setLayout(gate_layout)
-            gates_layout.addWidget(gate_frame)
-            self.gate_frames.append(gate_frame)
-            self.output_labels.append(output_label)
+                prev = y_positions[idx - 1]
+                spacings.append(max(0, y - (prev + gate_h)))
+        # build layout
+        for i in range(self.gates_per_level):
+            if spacings[i] > 0:
+                gates_layout.addSpacing(int(round(spacings[i])))
+            frame = self._create_gate_frame(i)
+            gates_layout.addWidget(frame, alignment=Qt.AlignmentFlag.AlignHCenter)
+        gates_layout.addStretch()
         
         layout.addLayout(gates_layout)
         layout.addStretch()
@@ -291,6 +287,44 @@ class LevelColumn(QFrame):
         name = gate_type.lower()
         base = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'assets'))
         return os.path.join(base, f"{name}.svg")
+
+    def _create_gate_frame(self, index: int) -> QFrame:
+        """Construct a gate QFrame for the given index, caching widgets."""
+        gate_frame = QFrame()
+        gate_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {COLORS['bg_primary']};
+                border: 1px solid {self.color_dict['border']};
+                border-radius: 6px;
+                padding: 6px;
+            }}
+        """)
+        gate_frame.setFixedSize(60, 80)
+
+        gate_layout = QVBoxLayout()
+        gate_layout.setContentsMargins(0, 0, 0, 0)
+        gate_layout.setSpacing(0)
+
+        # icon for gate type
+        if QSvgWidget is not None:
+            icon_widget = QSvgWidget()
+            icon_widget.setFixedSize(36, 36)
+        else:
+            icon_widget = QLabel()
+            icon_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        gate_layout.addWidget(icon_widget)
+        self.icon_widgets.append(icon_widget)
+
+        output_label = QLabel("0")
+        output_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        output_label.setStyleSheet(f"color: {COLORS['red']}; font-size: 14px;")
+        output_label.setObjectName(f"output_{index}")
+        gate_layout.addWidget(output_label)
+        self.output_labels.append(output_label)
+
+        gate_frame.setLayout(gate_layout)
+        self.gate_frames.append(gate_frame)
+        return gate_frame
 
     def _update_icons(self):
         """Loads and updates each icon widget based on current gate type."""
