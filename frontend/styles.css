@@ -224,3 +224,44 @@ body {
 .truth-table tr:last-child td { border-bottom: none; }
 .tt-out-1 { color: var(--color-1) !important; font-weight: bold; }
 .tt-out-0 { color: var(--color-0) !important; font-weight: bold; }
+
+/* ================= MENU CONTEXTUAL ================= */
+.context-menu {
+    position: absolute;
+    background: var(--bg-panel);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+    z-index: 1000;
+    padding: 5px 0;
+    min-width: 140px;
+    overflow: hidden;
+    transform-origin: top left;
+    animation: menuIn 0.2s ease-out;
+}
+.context-menu.hidden {
+    display: none !important;
+}
+.context-menu-item {
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text-main);
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.context-menu-item:hover {
+    background: var(--accent);
+    color: white;
+}
+.context-menu-item img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+}
+@keyframes menuIn {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+}

@@ -64,6 +64,12 @@ class TreeCircuitController {
         this.ttDesc = document.getElementById('ttDesc');
         this.ttBody = document.getElementById('ttBody');
 
+        // Menú Contextual (Clic derecho)
+        this.contextMenu = document.createElement('div');
+        this.contextMenu.className = 'context-menu hidden';
+        document.body.appendChild(this.contextMenu);
+        this.contextMenuTargetNode = null;
+
         // Controles Canvas
         this.zoomInBtn = document.getElementById('zoomInBtn');
         this.zoomOutBtn = document.getElementById('zoomOutBtn');
@@ -421,6 +427,13 @@ class TreeCircuitController {
         if (node.type === 'gate') {
             div.addEventListener('mouseenter', (e) => this.showTooltip(e, node.gateType));
             div.addEventListener('mouseleave', () => this.hideTooltip());
+            
+            // NUEVO: Evento Clic Derecho para abrir menú contextual
+            div.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.showContextMenu(e.clientX, e.clientY, node);
+            });
         }
 
         const img = document.createElement('img');
@@ -474,6 +487,8 @@ class TreeCircuitController {
 
         div.addEventListener('mousedown', (e) => {
             if (e.target && e.target.classList && e.target.classList.contains('port')) return;
+            // Evitamos arrastrar si se hizo clic derecho
+            if (e.button === 2) return; 
             e.preventDefault();
             this.draggingNode = node;
             const rect = this.container.getBoundingClientRect();
@@ -485,7 +500,11 @@ class TreeCircuitController {
         this.nodesUI.set(node.id, div);
     }
 
+    // ========== Tooltip & Menu Contextual ==========
     showTooltip(e, gateType) {
+        // No mostrar tooltip si el menú contextual está abierto
+        if(!this.contextMenu.classList.contains('hidden')) return;
+
         const info = GateLogic[gateType];
         if(!info) return;
         this.ttTitle.textContent = `Compuerta ${gateType}`;
@@ -508,6 +527,61 @@ class TreeCircuitController {
         this.tooltip.classList.add('hidden'); 
     }
 
+    showContextMenu(x, y, node) {
+        this.hideTooltip();
+        this.contextMenuTargetNode = node;
+        this.contextMenu.innerHTML = '';
+        
+        const gateOptions = ['AND', 'OR', 'NAND', 'NOR', 'XOR', 'XNOR'];
+        
+        gateOptions.forEach(gateName => {
+            const item = document.createElement('div');
+            item.className = 'context-menu-item';
+            
+            // Ponemos también el icono para que se vea genial
+            item.innerHTML = `<img src="svg/${gateName.toLowerCase()}.svg" alt="${gateName}"> <span>${gateName}</span>`;
+            
+            item.addEventListener('click', () => {
+                this.changeGateType(node, gateName);
+                this.hideContextMenu();
+            });
+            this.contextMenu.appendChild(item);
+        });
+
+        this.contextMenu.style.left = x + 'px';
+        this.contextMenu.style.top = y + 'px';
+        this.contextMenu.classList.remove('hidden');
+    }
+
+    hideContextMenu() {
+        this.contextMenu.classList.add('hidden');
+        this.contextMenuTargetNode = null;
+    }
+
+    changeGateType(node, newGateType) {
+        if(node.gateType === newGateType) return; // Si es la misma, no hacer nada
+        
+        node.gateType = newGateType;
+        
+        // Actualizar la interfaz de usuario de este nodo específico
+        const div = this.nodesUI.get(node.id);
+        if (div) {
+            const img = div.querySelector('img');
+            if (img) {
+                img.src = `svg/${newGateType.toLowerCase()}.svg`;
+                img.alt = newGateType;
+            }
+            const formulaSpan = div.querySelector('.node-formula');
+            if (formulaSpan) {
+                formulaSpan.textContent = GateLogic[newGateType].formula;
+            }
+        }
+        
+        // Disparar evaluación para reflejar el cambio lógico
+        this.scheduleEvaluation();
+    }
+
+    // ========== Wire Logic ==========
     createWireUI(conn) {
         const fromPos = this.getPortPosition(this.nodes.get(conn.fromNode), 'output', 0);
         const toPos = this.getPortPosition(this.nodes.get(conn.toNode), 'input', conn.toPort);
@@ -539,7 +613,6 @@ class TreeCircuitController {
         this.connections.forEach((_, id) => this.updateWire(id)); 
     }
 
-    // SOLUCIÓN MATEMÁTICA PURA: Evita errores de DOM y garantiza conexiones irrompibles
     getPortPosition(node, portType, portIndex) {
         if (portType === 'output') {
             return { x: node.x + 80, y: node.y + 59 };
@@ -579,18 +652,30 @@ class TreeCircuitController {
         this.zoomOutBtn.addEventListener('click', () => this.doZoom(0.8));
         this.resetViewBtn.addEventListener('click', () => this.resetView());
 
-        // SOLUCIÓN A PRUEBA DE FALLOS: Verificación segura del clic
+        // Ocultar menú contextual si se hace clic izquierdo en cualquier otro lado
+        document.addEventListener('mousedown', (e) => {
+            if (!e.target.closest('.context-menu')) {
+                this.hideContextMenu();
+            }
+        });
+
         this.container.addEventListener('mousedown', (e) => {
             if (e.target instanceof Element) {
                 if (e.target.closest('.node')) return;
                 if (e.target.classList.contains('port')) return;
             }
 
-            e.preventDefault();
-            this.isPanning = true;
-            this.lastPanX = e.clientX;
-            this.lastPanY = e.clientY;
+            // Iniciar paneo sólo si NO es un clic derecho
+            if (e.button === 0 || e.button === 1 || (e.button === 0 && e.altKey)) {
+                e.preventDefault();
+                this.isPanning = true;
+                this.lastPanX = e.clientX;
+                this.lastPanY = e.clientY;
+            }
         });
+
+        // Prevenir menú contextual del navegador dentro del área de dibujo
+        this.container.addEventListener('contextmenu', e => e.preventDefault());
 
         window.addEventListener('mousemove', (e) => {
             if (this.isPanning) {
@@ -635,7 +720,6 @@ class TreeCircuitController {
             this.draggingNode = null;
             
             if (this.tempWire) {
-                // Validación para conectar cables
                 const els = document.elementsFromPoint(e.clientX, e.clientY);
                 const target = els.find(el => el.classList && el.classList.contains('port') && el.dataset.type === 'input');
                 
@@ -690,7 +774,6 @@ class TreeCircuitController {
     doZoom(factor, cx, cy) {
         const rect = this.container.getBoundingClientRect();
         
-        // Coordenadas de mouse seguras
         const centerX = typeof cx === 'number' ? cx : rect.left + rect.width / 2;
         const centerY = typeof cy === 'number' ? cy : rect.top + rect.height / 2;
         
@@ -706,9 +789,7 @@ class TreeCircuitController {
         this.applyTransform();
     }
     
-    // VISUAL FEEDBACK: Aquí aplicamos el paneo incluso a la cuadrícula de fondo
     applyTransform() {
-        // Fallbacks por si algún número falla mágicamente
         if (isNaN(this.panX)) this.panX = 0;
         if (isNaN(this.panY)) this.panY = 0;
         if (isNaN(this.zoom)) this.zoom = 1;
@@ -716,7 +797,6 @@ class TreeCircuitController {
         this.nodeLayer.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.zoom})`;
         this.wireLayer.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.zoom})`;
         
-        // Efecto visual profundo: mover la cuadrícula para acompañar el mapa
         this.container.style.backgroundPosition = `${this.panX}px ${this.panY}px`;
         this.container.style.backgroundSize = `${20 * this.zoom}px ${20 * this.zoom}px`;
     }
